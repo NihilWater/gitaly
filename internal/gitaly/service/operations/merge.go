@@ -68,9 +68,13 @@ func (s *Server) mergeWithGit2Go(
 		AuthorName: authorName,
 		AuthorMail: authorMail,
 		AuthorDate: authorDate,
-		Message:    message,
-		Ours:       ours,
-		Theirs:     theirs,
+		// git-write-commit(1) adds a '\n' character at the end of
+		// commit messages while Git2Go does not. In order to keep
+		// behavior consistent, add a '\n' here to the message we pass
+		// to git2go's commit function.
+		Message: message + "\n",
+		Ours:    ours,
+		Theirs:  theirs,
 	})
 
 	if err != nil {

@@ -312,7 +312,7 @@ func TestUserMergeBranch_stableMergeIDs(t *testing.T) {
 	}
 
 	// Because the timestamp is
-	expectedMergeID := "f0165798887392f9148b55d54a832b005f93a38c"
+	expectedMergeID := "4da30bc9e1ed20b1cdeabafc3f68889df72582f1"
 
 	require.NoError(t, mergeBidi.Send(firstRequest), "send first request")
 	response, err := mergeBidi.Recv()
@@ -331,8 +331,8 @@ func TestUserMergeBranch_stableMergeIDs(t *testing.T) {
 	require.NoError(t, err, "look up git commit after call has finished")
 	require.Equal(t, commit, &gitalypb.GitCommit{
 		Subject:  []byte("Merged by Gitaly"),
-		Body:     []byte("Merged by Gitaly"),
-		BodySize: 16,
+		Body:     []byte("Merged by Gitaly\n"),
+		BodySize: 17,
 		Id:       expectedMergeID,
 		ParentIds: []string{
 			"281d3a76f31c812dbf48abce82ccf6860adedd81",
@@ -464,7 +464,7 @@ func TestUserMergeBranch_concurrentUpdate(t *testing.T) {
 				ReferenceUpdate: &gitalypb.ReferenceUpdateError{
 					ReferenceName: []byte("refs/heads/" + mergeBranchName),
 					OldOid:        "281d3a76f31c812dbf48abce82ccf6860adedd81",
-					NewOid:        "f0165798887392f9148b55d54a832b005f93a38c",
+					NewOid:        "4da30bc9e1ed20b1cdeabafc3f68889df72582f1",
 				},
 			},
 		},
@@ -532,7 +532,7 @@ func TestUserMergeBranch_ambiguousReference(t *testing.T) {
 	require.NoError(t, err, "look up git commit after call has finished")
 
 	testhelper.ProtoEqual(t, &gitalypb.OperationBranchUpdate{CommitId: commit.Id}, response.BranchUpdate)
-	require.Equal(t, mergeCommitMessage, string(commit.Body))
+	require.Equal(t, mergeCommitMessage+"\n", string(commit.Body))
 	require.Equal(t, gittest.TestUser.Name, commit.Author.Name)
 	require.Equal(t, gittest.TestUser.Email, commit.Author.Email)
 	require.Equal(t, []string{mergeBranchHeadBefore, commitToMerge}, commit.ParentIds)
@@ -690,7 +690,7 @@ func TestUserMergeBranch_allowed(t *testing.T) {
 
 	ctx := testhelper.Context(t)
 
-	mergeBranchHeadAfter := "ff0ac4dfa30d6b26fd14aa83a75650355270bf76"
+	mergeBranchHeadAfter := "c5b32bc830ea7f6f14796118ff236608295bcf46"
 
 	for _, tc := range []struct {
 		desc             string
