@@ -73,6 +73,19 @@ func (v Version) IsSupported() bool {
 	return !v.LessThan(minimumVersion)
 }
 
+// IsMergeTreeSupported checks if a version of git contains the
+// git-merge-tree(1) builtin
+func (v Version) IsMergeTreeSupported() bool {
+	return !v.LessThan(Version{
+		versionString: "2.38.0",
+		major:         2,
+		minor:         38,
+		patch:         0,
+		rc:            true,
+		gl:            0,
+	})
+}
+
 // LessThan determines whether the version is older than another version.
 func (v Version) LessThan(other Version) bool {
 	switch {
