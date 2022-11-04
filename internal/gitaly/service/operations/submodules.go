@@ -9,6 +9,7 @@ import (
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus/ctxlogrus"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/git/localrepo"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git/updateref"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git2go"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/gitaly/service"
@@ -61,6 +62,34 @@ func validateUserUpdateSubmoduleRequest(req *gitalypb.UserUpdateSubmoduleRequest
 	return nil
 }
 
+func (s *Server) updateSubmoduleWithGit2Go(ctx context.Context, quarantineRepo *localrepo.Repo, req *gitalypb.UserUpdateSubmoduleRequest) (string, error) {
+	repoPath, err := quarantineRepo.Path()
+	if err != nil {
+		return "", fmt.Errorf("%s: locate repo: %w", userUpdateSubmoduleName, err)
+	}
+
+	authorDate, err := dateFromProto(req)
+	if err != nil {
+		return "", helper.ErrInvalidArgument(err)
+	}
+
+	result, err := s.git2goExecutor.Submodule(ctx, quarantineRepo, git2go.SubmoduleCommand{
+		Repository: repoPath,
+		AuthorMail: string(req.GetUser().GetEmail()),
+		AuthorName: string(req.GetUser().GetName()),
+		AuthorDate: authorDate,
+		Branch:     string(req.GetBranch()),
+		CommitSHA:  req.GetCommitSha(),
+		Submodule:  string(req.GetSubmodule()),
+		Message:    string(req.GetCommitMessage()),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return result.CommitID, nil
+}
+
 func (s *Server) userUpdateSubmodule(ctx context.Context, req *gitalypb.UserUpdateSubmoduleRequest) (*gitalypb.UserUpdateSubmoduleResponse, error) {
 	quarantineDir, quarantineRepo, err := s.quarantinedRepo(ctx, req.GetRepository())
 	if err != nil {
@@ -77,36 +106,7 @@ func (s *Server) userUpdateSubmodule(ctx context.Context, req *gitalypb.UserUpda
 		}, nil
 	}
 
-	referenceName := git.NewReferenceNameFromBranchName(string(req.GetBranch()))
-
-	branchOID, err := quarantineRepo.ResolveRevision(ctx, referenceName.Revision())
-	if err != nil {
-		if errors.Is(err, git.ErrReferenceNotFound) {
-			return nil, helper.ErrInvalidArgumentf("Cannot find branch")
-		}
-		return nil, fmt.Errorf("%s: get branch: %w", userUpdateSubmoduleName, err)
-	}
-
-	repoPath, err := quarantineRepo.Path()
-	if err != nil {
-		return nil, fmt.Errorf("%s: locate repo: %w", userUpdateSubmoduleName, err)
-	}
-
-	authorDate, err := dateFromProto(req)
-	if err != nil {
-		return nil, helper.ErrInvalidArgument(err)
-	}
-
-	result, err := s.git2goExecutor.Submodule(ctx, quarantineRepo, git2go.SubmoduleCommand{
-		Repository: repoPath,
-		AuthorMail: string(req.GetUser().GetEmail()),
-		AuthorName: string(req.GetUser().GetName()),
-		AuthorDate: authorDate,
-		Branch:     string(req.GetBranch()),
-		CommitSHA:  req.GetCommitSha(),
-		Submodule:  string(req.GetSubmodule()),
-		Message:    string(req.GetCommitMessage()),
-	})
+	commitID, err := s.updateSubmoduleWithGit2Go(ctx, quarantineRepo, req)
 	if err != nil {
 		errStr := strings.TrimPrefix(err.Error(), "submodule: ")
 		errStr = strings.TrimSpace(errStr)
@@ -136,12 +136,23 @@ func (s *Server) userUpdateSubmodule(ctx context.Context, req *gitalypb.UserUpda
 		if resp != nil {
 			return resp, nil
 		}
+
 		return nil, fmt.Errorf("%s: submodule subcommand: %w", userUpdateSubmoduleName, err)
 	}
 
-	commitID, err := git.ObjectHashSHA1.FromHex(result.CommitID)
+	commitOID, err := git.ObjectHashSHA1.FromHex(commitID)
 	if err != nil {
 		return nil, helper.ErrInvalidArgumentf("cannot parse commit ID: %w", err)
+	}
+
+	referenceName := git.NewReferenceNameFromBranchName(string(req.GetBranch()))
+
+	branchOID, err := quarantineRepo.ResolveRevision(ctx, referenceName.Revision())
+	if err != nil {
+		if errors.Is(err, git.ErrReferenceNotFound) {
+			return nil, helper.ErrInvalidArgumentf("Cannot find branch")
+		}
+		return nil, fmt.Errorf("%s: get branch: %w", userUpdateSubmoduleName, err)
 	}
 
 	if err := s.updateReferenceWithHooks(
@@ -150,7 +161,7 @@ func (s *Server) userUpdateSubmodule(ctx context.Context, req *gitalypb.UserUpda
 		req.GetUser(),
 		quarantineDir,
 		referenceName,
-		commitID,
+		commitOID,
 		branchOID,
 	); err != nil {
 		var customHookErr updateref.CustomHookError
@@ -172,7 +183,7 @@ func (s *Server) userUpdateSubmodule(ctx context.Context, req *gitalypb.UserUpda
 
 	return &gitalypb.UserUpdateSubmoduleResponse{
 		BranchUpdate: &gitalypb.OperationBranchUpdate{
-			CommitId:      result.CommitID,
+			CommitId:      commitID,
 			BranchCreated: false,
 			RepoCreated:   false,
 		},
