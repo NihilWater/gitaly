@@ -3,6 +3,7 @@ package gitaly
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -1542,5 +1543,163 @@ func checkManagerError(t *testing.T, managerErr chan error, mgr *TransactionMana
 		// or we are still waiting for it to return. We test whether the manager is running or not here by queueing a
 		// a proposal that will error. If the manager processes it, we know it is still running.
 		return true, nil
+	}
+}
+
+// BenchmarkTransactionManager benchmarks the transaction throughput of the TransactionManager at various levels
+// of concurrency and transaction sizes.
+func BenchmarkTransactionManager(b *testing.B) {
+	for _, tc := range []struct {
+		// numberOfRepositories sets the number of repositories that are updating the references. Each repository has
+		// its own TransactionManager. Setting this to 1 allows for testing throughput of a single repository while
+		// setting this higher allows for testing parallel throughput of multiple repositories. This mostly serves
+		// to determine the impact of the shared resources such as the database.
+		numberOfRepositories int
+		// concurrentUpdaters sets the number of goroutines that are calling Propose for a repository. Each of the
+		// updaters work on their own references so they don't block each other. Setting this to 1 allows for testing
+		// sequential update throughput of a repository. Setting this higher allows for testing reference update
+		// throughput when multiple references are being updated concurrently.
+		concurrentUpdaters int
+		// transactionSize sets the number of references that are updated in each transaction.
+		transactionSize int
+	}{
+		{
+			numberOfRepositories: 1,
+			concurrentUpdaters:   1,
+			transactionSize:      1,
+		},
+		{
+			numberOfRepositories: 1,
+			concurrentUpdaters:   10,
+			transactionSize:      1,
+		},
+		{
+			numberOfRepositories: 10,
+			concurrentUpdaters:   1,
+			transactionSize:      1,
+		},
+		{
+			numberOfRepositories: 10,
+			concurrentUpdaters:   10,
+			transactionSize:      1,
+		},
+	} {
+		desc := fmt.Sprintf("%d repositories/%d updaters/%d transaction size",
+			tc.numberOfRepositories,
+			tc.concurrentUpdaters,
+			tc.transactionSize,
+		)
+		b.Run(desc, func(b *testing.B) {
+			ctx := testhelper.Context(b)
+
+			cfg := testcfg.Build(b)
+
+			cmdFactory, clean, err := git.NewExecCommandFactory(cfg)
+			require.NoError(b, err)
+			defer clean()
+
+			cache := catfile.NewCache(cfg)
+			defer cache.Stop()
+
+			database, err := OpenDatabase(b.TempDir())
+			require.NoError(b, err)
+			defer testhelper.MustClose(b, database)
+
+			var (
+				// managerWG records the running TransactionManager.Run goroutines.
+				managerWG sync.WaitGroup
+				managers  []*TransactionManager
+
+				// The references are updated back and forth between commit1 and commit2.
+				commit1 git.ObjectID
+				commit2 git.ObjectID
+			)
+
+			// Set up the repositories and start their TransactionManagers.
+			for i := 0; i < tc.numberOfRepositories; i++ {
+				repo, repoPath := gittest.CreateRepository(b, ctx, cfg, gittest.CreateRepositoryConfig{
+					SkipCreationViaService: true,
+				})
+
+				localRepo := localrepo.New(
+					config.NewLocator(cfg),
+					cmdFactory,
+					cache,
+					repo,
+				)
+
+				// Set up two commits that the updaters update their references back and forth.
+				commit1 = gittest.WriteCommit(b, cfg, repoPath, gittest.WithParents())
+				commit2 = gittest.WriteCommit(b, cfg, repoPath, gittest.WithParents(commit1))
+
+				manager := NewTransactionManager(database, localRepo)
+				managers = append(managers, manager)
+
+				managerWG.Add(1)
+				go func() {
+					defer managerWG.Done()
+					require.NoError(b, manager.Run())
+				}()
+			}
+
+			// getReferenceName builds a ReferenceUpdates with unique branches for the updater.
+			getReferenceUpdates := func(updaterID int, old, new git.ObjectID) ReferenceUpdates {
+				referenceUpdates := make(ReferenceUpdates, tc.transactionSize)
+				for i := 0; i < tc.transactionSize; i++ {
+					referenceUpdates[git.ReferenceName(fmt.Sprintf("refs/heads/branch-%d-%d", updaterID, i))] = ReferenceTips{
+						OldOID: old,
+						NewOID: new,
+					}
+				}
+
+				return referenceUpdates
+			}
+
+			// proposeWG tracks the number of of on going Propose calls.
+			var proposeWG sync.WaitGroup
+			transactionChan := make(chan struct{})
+
+			for _, manager := range managers {
+				manager := manager
+				for i := 0; i < tc.concurrentUpdaters; i++ {
+
+					// Build the reference updates that this updater will go back and forth with.
+					currentReferences := getReferenceUpdates(i, commit1, commit2)
+					nextReferences := getReferenceUpdates(i, commit2, commit1)
+
+					// Setup the starting state so the references start at the expected old tip.
+					require.NoError(b, manager.Propose(ctx, Transaction{
+						ReferenceVerificationStrategy: ReferenceVerificationStrategySkip,
+						ReferenceUpdates:              currentReferences,
+					}))
+
+					proposeWG.Add(1)
+					go func() {
+						defer proposeWG.Done()
+
+						for range transactionChan {
+							require.NoError(b, manager.Propose(ctx, Transaction{ReferenceUpdates: nextReferences}))
+							currentReferences, nextReferences = nextReferences, currentReferences
+						}
+					}()
+				}
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				transactionChan <- struct{}{}
+			}
+			close(transactionChan)
+
+			proposeWG.Wait()
+			b.StopTimer()
+
+			for _, manager := range managers {
+				manager.Stop()
+			}
+
+			managerWG.Wait()
+		})
 	}
 }
