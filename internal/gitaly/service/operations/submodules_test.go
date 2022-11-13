@@ -4,6 +4,7 @@ package operations
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -12,8 +13,9 @@ import (
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git/gittest"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git/localrepo"
-	"gitlab.com/gitlab-org/gitaly/v15/internal/git/lstree"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/git/tree"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/helper/text"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/metadata/featureflag"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/testhelper"
 	"gitlab.com/gitlab-org/gitaly/v15/proto/go/gitalypb"
 	"google.golang.org/grpc/codes"
@@ -23,10 +25,13 @@ import (
 
 func TestSuccessfulUserUpdateSubmoduleRequest(t *testing.T) {
 	t.Parallel()
-	ctx := testhelper.Context(t)
 
+	testhelper.NewFeatureSets(featureflag.SubmoduleInGit).
+		Run(t, testSuccessfulUserUpdateSubmoduleRequest)
+}
+
+func testSuccessfulUserUpdateSubmoduleRequest(t *testing.T, ctx context.Context) {
 	ctx, cfg, repoProto, repoPath, client := setupOperationsService(t, ctx)
-
 	repo := localrepo.NewTestRepo(t, cfg, repoProto)
 
 	// This reference is created to check that we can correctly commit onto
@@ -94,7 +99,7 @@ func TestSuccessfulUserUpdateSubmoduleRequest(t *testing.T) {
 			require.Equal(t, commitMessage, commit.Subject)
 
 			entry := gittest.Exec(t, cfg, "-C", repoPath, "ls-tree", "-z", fmt.Sprintf("%s^{tree}:", response.BranchUpdate.CommitId), testCase.submodule)
-			parser := lstree.NewParser(bytes.NewReader(entry), git.ObjectHashSHA1)
+			parser := tree.NewParser(bytes.NewReader(entry), git.ObjectHashSHA1)
 			parsedEntry, err := parser.NextEntry()
 			require.NoError(t, err)
 			require.Equal(t, testCase.submodule, parsedEntry.Path)
@@ -105,10 +110,16 @@ func TestSuccessfulUserUpdateSubmoduleRequest(t *testing.T) {
 
 func TestUserUpdateSubmoduleStableID(t *testing.T) {
 	t.Parallel()
-	ctx := testhelper.Context(t)
 
-	ctx, cfg, repoProto, _, client := setupOperationsService(t, ctx)
+	testhelper.NewFeatureSets(featureflag.SubmoduleInGit).
+		Run(t, testUserUpdateSubmoduleStableID)
+}
+
+func testUserUpdateSubmoduleStableID(t *testing.T, ctx context.Context) {
+	ctx, cfg, repoProto, repoPath, client := setupOperationsService(t, ctx)
 	repo := localrepo.NewTestRepo(t, cfg, repoProto)
+
+	fmt.Println(repoPath)
 
 	response, err := client.UserUpdateSubmodule(ctx, &gitalypb.UserUpdateSubmoduleRequest{
 		Repository:    repoProto,
@@ -117,7 +128,7 @@ func TestUserUpdateSubmoduleStableID(t *testing.T) {
 		CommitSha:     "41fa1bc9e0f0630ced6a8a211d60c2af425ecc2d",
 		Branch:        []byte("master"),
 		CommitMessage: []byte("Update Submodule message"),
-		Timestamp:     &timestamppb.Timestamp{Seconds: 12345},
+		Timestamp:     &timestamppb.Timestamp{Seconds: 1668466827},
 	})
 	require.NoError(t, err)
 	require.Empty(t, response.GetCommitError())
@@ -126,24 +137,24 @@ func TestUserUpdateSubmoduleStableID(t *testing.T) {
 	commit, err := repo.ReadCommit(ctx, git.Revision(response.BranchUpdate.CommitId))
 	require.NoError(t, err)
 	require.Equal(t, &gitalypb.GitCommit{
-		Id: "928a79b1c5bbe64759f540aad8b339d281719118",
+		Id: "14fd9ea5394260e93e545bffda44fffba85fdd0c",
 		ParentIds: []string{
 			"1e292f8fedd741b75372e19097c76d327140c312",
 		},
 		TreeId:   "569d23230fd644aaeb2fcb239c52ef1fcaa171c3",
 		Subject:  []byte("Update Submodule message"),
-		Body:     []byte("Update Submodule message"),
-		BodySize: 24,
+		Body:     []byte("Update Submodule message\n"),
+		BodySize: 25,
 		Author: &gitalypb.CommitAuthor{
 			Name:     gittest.TestUser.Name,
 			Email:    gittest.TestUser.Email,
-			Date:     &timestamppb.Timestamp{Seconds: 12345},
+			Date:     &timestamppb.Timestamp{Seconds: 1668466827},
 			Timezone: []byte(gittest.TimezoneOffset),
 		},
 		Committer: &gitalypb.CommitAuthor{
 			Name:     gittest.TestUser.Name,
 			Email:    gittest.TestUser.Email,
-			Date:     &timestamppb.Timestamp{Seconds: 12345},
+			Date:     &timestamppb.Timestamp{Seconds: 1668466827},
 			Timezone: []byte(gittest.TimezoneOffset),
 		},
 	}, commit)
@@ -151,7 +162,13 @@ func TestUserUpdateSubmoduleStableID(t *testing.T) {
 
 func TestUserUpdateSubmoduleQuarantine(t *testing.T) {
 	t.Parallel()
-	ctx := testhelper.Context(t)
+
+	testhelper.NewFeatureSets(featureflag.SubmoduleInGit).
+		Run(t, testUserUpdateSubmoduleQuarantine)
+}
+
+func testUserUpdateSubmoduleQuarantine(t *testing.T, ctx context.Context) {
+	t.Parallel()
 
 	ctx, cfg, repoProto, repoPath, client := setupOperationsService(t, ctx)
 	repo := localrepo.NewTestRepo(t, cfg, repoProto)
@@ -173,7 +190,7 @@ func TestUserUpdateSubmoduleQuarantine(t *testing.T) {
 		CommitSha:     "41fa1bc9e0f0630ced6a8a211d60c2af425ecc2d",
 		Branch:        []byte("master"),
 		CommitMessage: []byte("Update Submodule message"),
-		Timestamp:     &timestamppb.Timestamp{Seconds: 12345},
+		Timestamp:     &timestamppb.Timestamp{Seconds: 1668466827},
 	})
 	require.NoError(t, err)
 	require.NotNil(t, response)
@@ -310,7 +327,16 @@ func TestFailedUserUpdateSubmoduleRequestDueToValidations(t *testing.T) {
 
 func TestFailedUserUpdateSubmoduleRequestDueToInvalidBranch(t *testing.T) {
 	t.Parallel()
-	ctx := testhelper.Context(t)
+
+	testhelper.NewFeatureSets(featureflag.SubmoduleInGit).
+		Run(t, testFailedUserUpdateSubmoduleRequestDueToInvalidBranch)
+}
+
+func testFailedUserUpdateSubmoduleRequestDueToInvalidBranch(
+	t *testing.T,
+	ctx context.Context,
+) {
+	t.Parallel()
 
 	ctx, _, repo, _, client := setupOperationsService(t, ctx)
 
@@ -330,7 +356,16 @@ func TestFailedUserUpdateSubmoduleRequestDueToInvalidBranch(t *testing.T) {
 
 func TestFailedUserUpdateSubmoduleRequestDueToInvalidSubmodule(t *testing.T) {
 	t.Parallel()
-	ctx := testhelper.Context(t)
+
+	testhelper.NewFeatureSets(featureflag.SubmoduleInGit).
+		Run(t, testFailedUserUpdateSubmoduleRequestDueToInvalidSubmodule)
+}
+
+func testFailedUserUpdateSubmoduleRequestDueToInvalidSubmodule(
+	t *testing.T,
+	ctx context.Context,
+) {
+	t.Parallel()
 
 	ctx, _, repo, _, client := setupOperationsService(t, ctx)
 
@@ -344,14 +379,26 @@ func TestFailedUserUpdateSubmoduleRequestDueToInvalidSubmodule(t *testing.T) {
 	}
 
 	response, err := client.UserUpdateSubmodule(ctx, request)
-	require.NoError(t, err)
-	require.Equal(t, response.CommitError, "Invalid submodule path")
+	if featureflag.SubmoduleInGit.IsEnabled(ctx) {
+		require.Contains(t, err.Error(), "submodule not found")
+	} else {
+		require.NoError(t, err)
+		require.Equal(t, response.CommitError, "Invalid submodule path")
+	}
 }
 
 func TestFailedUserUpdateSubmoduleRequestDueToSameReference(t *testing.T) {
 	t.Parallel()
-	ctx := testhelper.Context(t)
 
+	testhelper.NewFeatureSets(featureflag.SubmoduleInGit).
+		Run(t, testFailedUserUpdateSubmoduleRequestDueToSameReference)
+}
+
+func testFailedUserUpdateSubmoduleRequestDueToSameReference(
+	t *testing.T,
+	ctx context.Context,
+) {
+	t.Parallel()
 	ctx, _, repo, _, client := setupOperationsService(t, ctx)
 
 	request := &gitalypb.UserUpdateSubmoduleRequest{
