@@ -1,4 +1,4 @@
-package lstree
+package tree
 
 import "gitlab.com/gitlab-org/gitaly/v15/internal/git"
 

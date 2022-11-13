@@ -12,7 +12,7 @@ import (
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git/gittest"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git/localrepo"
-	"gitlab.com/gitlab-org/gitaly/v15/internal/git/lstree"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/git/tree"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/helper/text"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/testhelper"
 	"gitlab.com/gitlab-org/gitaly/v15/proto/go/gitalypb"
@@ -94,7 +94,7 @@ func TestSuccessfulUserUpdateSubmoduleRequest(t *testing.T) {
 			require.Equal(t, commitMessage, commit.Subject)
 
 			entry := gittest.Exec(t, cfg, "-C", repoPath, "ls-tree", "-z", fmt.Sprintf("%s^{tree}:", response.BranchUpdate.CommitId), testCase.submodule)
-			parser := lstree.NewParser(bytes.NewReader(entry), git.ObjectHashSHA1)
+			parser := tree.NewParser(bytes.NewReader(entry), git.ObjectHashSHA1)
 			parsedEntry, err := parser.NextEntry()
 			require.NoError(t, err)
 			require.Equal(t, testCase.submodule, parsedEntry.Path)

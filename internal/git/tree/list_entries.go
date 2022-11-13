@@ -1,4 +1,4 @@
-package lstree
+package tree
 
 import (
 	"bytes"
