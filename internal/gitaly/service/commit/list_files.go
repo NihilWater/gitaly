@@ -6,7 +6,7 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus/ctxlogrus"
 	log "github.com/sirupsen/logrus"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git"
-	"gitlab.com/gitlab-org/gitaly/v15/internal/git/lstree"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/git/tree"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/gitaly/service"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/helper"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/helper/chunk"
@@ -85,7 +85,7 @@ func (s *server) listFiles(repo git.RepositoryExecutor, revision string, stream 
 
 	sender := chunk.New(&listFilesSender{stream: stream})
 
-	for parser := lstree.NewParser(cmd, git.ObjectHashSHA1); ; {
+	for parser := tree.NewParser(cmd, git.ObjectHashSHA1); ; {
 		entry, err := parser.NextEntry()
 		if err == io.EOF {
 			break
@@ -94,7 +94,7 @@ func (s *server) listFiles(repo git.RepositoryExecutor, revision string, stream 
 			return err
 		}
 
-		if entry.Type != lstree.Blob {
+		if entry.Type != tree.Blob {
 			continue
 		}
 

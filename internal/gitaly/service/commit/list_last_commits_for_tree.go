@@ -8,7 +8,7 @@ import (
 	"gitlab.com/gitlab-org/gitaly/v15/internal/command"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git/log"
-	"gitlab.com/gitlab-org/gitaly/v15/internal/git/lstree"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/git/tree"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/gitaly/service"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/helper"
 	"gitlab.com/gitlab-org/gitaly/v15/proto/go/gitalypb"
@@ -51,7 +51,7 @@ func (s *server) listLastCommitsForTree(in *gitalypb.ListLastCommitsForTreeReque
 	offset := int(in.GetOffset())
 	if offset >= len(entries) {
 		offset = 0
-		entries = lstree.Entries{}
+		entries = tree.Entries{}
 	}
 
 	limit := offset + int(in.GetLimit())
@@ -87,8 +87,8 @@ func (s *server) listLastCommitsForTree(in *gitalypb.ListLastCommitsForTreeReque
 	return sendCommitsForTree(batch, stream)
 }
 
-func getLSTreeEntries(parser *lstree.Parser) (lstree.Entries, error) {
-	entries := lstree.Entries{}
+func getLSTreeEntries(parser *tree.Parser) (tree.Entries, error) {
+	entries := tree.Entries{}
 
 	for {
 		entry, err := parser.NextEntry()
@@ -108,7 +108,7 @@ func getLSTreeEntries(parser *lstree.Parser) (lstree.Entries, error) {
 	return entries, nil
 }
 
-func (s *server) newLSTreeParser(in *gitalypb.ListLastCommitsForTreeRequest, stream gitalypb.CommitService_ListLastCommitsForTreeServer) (*command.Command, *lstree.Parser, error) {
+func (s *server) newLSTreeParser(in *gitalypb.ListLastCommitsForTreeRequest, stream gitalypb.CommitService_ListLastCommitsForTreeServer) (*command.Command, *tree.Parser, error) {
 	path := string(in.GetPath())
 	if path == "" || path == "/" {
 		path = "."
@@ -124,7 +124,7 @@ func (s *server) newLSTreeParser(in *gitalypb.ListLastCommitsForTreeRequest, str
 		return nil, nil, err
 	}
 
-	return cmd, lstree.NewParser(cmd, git.ObjectHashSHA1), nil
+	return cmd, tree.NewParser(cmd, git.ObjectHashSHA1), nil
 }
 
 func sendCommitsForTree(batch []*gitalypb.ListLastCommitsForTreeResponse_CommitForTree, stream gitalypb.CommitService_ListLastCommitsForTreeServer) error {

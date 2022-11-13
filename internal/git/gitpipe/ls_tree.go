@@ -9,13 +9,13 @@ import (
 
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git/localrepo"
-	"gitlab.com/gitlab-org/gitaly/v15/internal/git/lstree"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/git/tree"
 )
 
 // lsTreeConfig is configuration for the LsTree pipeline step.
 type lsTreeConfig struct {
 	recursive  bool
-	typeFilter func(*lstree.Entry) bool
+	typeFilter func(*tree.Entry) bool
 	skipResult func(*RevisionResult) (bool, error)
 }
 
@@ -32,7 +32,7 @@ func LsTreeWithRecursive() LsTreeOption {
 // LsTreeWithBlobFilter configures LsTree to only pass through blob objects.
 func LsTreeWithBlobFilter() LsTreeOption {
 	return func(cfg *lsTreeConfig) {
-		cfg.typeFilter = func(e *lstree.Entry) bool { return e.Type == lstree.Blob }
+		cfg.typeFilter = func(e *tree.Entry) bool { return e.Type == tree.Blob }
 	}
 }
 
@@ -97,7 +97,7 @@ func LsTree(
 			return
 		}
 
-		parser := lstree.NewParser(cmd, objectHash)
+		parser := tree.NewParser(cmd, objectHash)
 		for {
 			entry, err := parser.NextEntry()
 			if err != nil {

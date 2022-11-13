@@ -15,7 +15,7 @@ import (
 	"github.com/go-enry/go-license-detector/v4/licensedb/filer"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git/localrepo"
-	"gitlab.com/gitlab-org/gitaly/v15/internal/git/lstree"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/git/tree"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/gitaly/rubyserver"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/gitaly/service"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/helper"
@@ -200,11 +200,11 @@ func (f *gitFiler) ReadDir(string) ([]filer.File, error) {
 		return nil, err
 	}
 
-	tree := lstree.NewParser(cmd, git.ObjectHashSHA1)
+	t := tree.NewParser(cmd, git.ObjectHashSHA1)
 
 	var files []filer.File
 	for {
-		entry, err := tree.NextEntry()
+		entry, err := t.NextEntry()
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -214,7 +214,7 @@ func (f *gitFiler) ReadDir(string) ([]filer.File, error) {
 
 		// Given that we're doing a recursive listing, we skip over all types which aren't
 		// blobs.
-		if entry.Type != lstree.Blob {
+		if entry.Type != tree.Blob {
 			continue
 		}
 

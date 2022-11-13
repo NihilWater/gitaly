@@ -196,6 +196,9 @@ var commandDescriptions = map[string]commandDescription{
 	"mktag": {
 		flags: scNoRefUpdates,
 	},
+	"mktree": {
+		flags: scNoRefUpdates,
+	},
 	"multi-pack-index": {
 		flags: scNoRefUpdates,
 	},
