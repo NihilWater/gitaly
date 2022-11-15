@@ -24,6 +24,7 @@ import (
 	"gitlab.com/gitlab-org/gitaly/v15/internal/gitlab"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/helper"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/helper/text"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/metadata/featureflag"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/testhelper"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/testhelper/testcfg"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/testhelper/testserver"
@@ -42,8 +43,14 @@ var (
 
 func TestUserMergeBranch_successful(t *testing.T) {
 	t.Parallel()
+	testhelper.NewFeatureSets(featureflag.MergeTreeMerge, featureflag.GitV238).Run(
+		t,
+		testUserMergeBranchSuccessful,
+	)
+}
 
-	ctx := testhelper.Context(t)
+func testUserMergeBranchSuccessful(t *testing.T, ctx context.Context) {
+	t.Parallel()
 
 	ctx, cfg, repoProto, repoPath, client := setupOperationsService(t, ctx)
 
@@ -232,8 +239,14 @@ func TestUserMergeBranch_failure(t *testing.T) {
 
 func TestUserMergeBranch_quarantine(t *testing.T) {
 	t.Parallel()
+	testhelper.NewFeatureSets(featureflag.MergeTreeMerge, featureflag.GitV238).Run(
+		t,
+		testUserMergeBranchQuarantine,
+	)
+}
 
-	ctx := testhelper.Context(t)
+func testUserMergeBranchQuarantine(t *testing.T, ctx context.Context) {
+	t.Parallel()
 
 	ctx, cfg, repoProto, repoPath, client := setupOperationsService(t, ctx)
 	repo := localrepo.NewTestRepo(t, cfg, repoProto)
@@ -290,8 +303,14 @@ func TestUserMergeBranch_quarantine(t *testing.T) {
 
 func TestUserMergeBranch_stableMergeIDs(t *testing.T) {
 	t.Parallel()
+	testhelper.NewFeatureSets(featureflag.MergeTreeMerge, featureflag.GitV238).Run(
+		t,
+		testUserMergeBranchStableMergeIDs,
+	)
+}
 
-	ctx := testhelper.Context(t)
+func testUserMergeBranchStableMergeIDs(t *testing.T, ctx context.Context) {
+	t.Parallel()
 
 	ctx, cfg, repoProto, repoPath, client := setupOperationsService(t, ctx)
 
@@ -317,7 +336,7 @@ func TestUserMergeBranch_stableMergeIDs(t *testing.T) {
 	require.NoError(t, mergeBidi.Send(firstRequest), "send first request")
 	response, err := mergeBidi.Recv()
 	require.NoError(t, err, "receive first response")
-	require.Equal(t, response.CommitId, expectedMergeID)
+	require.Equal(t, expectedMergeID, response.CommitId)
 
 	require.NoError(t, mergeBidi.Send(&gitalypb.UserMergeBranchRequest{Apply: true}), "apply merge")
 	response, err = mergeBidi.Recv()
@@ -358,8 +377,14 @@ func TestUserMergeBranch_stableMergeIDs(t *testing.T) {
 
 func TestUserMergeBranch_abort(t *testing.T) {
 	t.Parallel()
+	testhelper.NewFeatureSets(featureflag.MergeTreeMerge, featureflag.GitV238).Run(
+		t,
+		testUserMergeBranchAbort,
+	)
+}
 
-	ctx := testhelper.Context(t)
+func testUserMergeBranchAbort(t *testing.T, ctx context.Context) {
+	t.Parallel()
 
 	ctx, cfg, repoProto, repoPath, client := setupOperationsService(t, ctx)
 
@@ -422,8 +447,14 @@ func TestUserMergeBranch_abort(t *testing.T) {
 
 func TestUserMergeBranch_concurrentUpdate(t *testing.T) {
 	t.Parallel()
+	testhelper.NewFeatureSets(featureflag.MergeTreeMerge, featureflag.GitV238).Run(
+		t,
+		testUserMergeBranchConcurrentUpdate,
+	)
+}
 
-	ctx := testhelper.Context(t)
+func testUserMergeBranchConcurrentUpdate(t *testing.T, ctx context.Context) {
+	t.Parallel()
 
 	ctx, cfg, repoProto, repoPath, client := setupOperationsService(t, ctx)
 
@@ -478,8 +509,14 @@ func TestUserMergeBranch_concurrentUpdate(t *testing.T) {
 
 func TestUserMergeBranch_ambiguousReference(t *testing.T) {
 	t.Parallel()
+	testhelper.NewFeatureSets(featureflag.MergeTreeMerge, featureflag.GitV238).Run(
+		t,
+		testUserMergeBranchAmbiguousReference,
+	)
+}
 
-	ctx := testhelper.Context(t)
+func testUserMergeBranchAmbiguousReference(t *testing.T, ctx context.Context) {
+	t.Parallel()
 
 	ctx, cfg, repoProto, repoPath, client := setupOperationsService(t, ctx)
 
@@ -540,8 +577,14 @@ func TestUserMergeBranch_ambiguousReference(t *testing.T) {
 
 func TestUserMergeBranch_failingHooks(t *testing.T) {
 	t.Parallel()
+	testhelper.NewFeatureSets(featureflag.MergeTreeMerge, featureflag.GitV238).Run(
+		t,
+		testUserMergeBranchFailingHooks,
+	)
+}
 
-	ctx := testhelper.Context(t)
+func testUserMergeBranchFailingHooks(t *testing.T, ctx context.Context) {
+	t.Parallel()
 
 	ctx, cfg, repo, repoPath, client := setupOperationsService(t, ctx)
 
@@ -631,28 +674,47 @@ func TestUserMergeBranch_failingHooks(t *testing.T) {
 
 func TestUserMergeBranch_conflict(t *testing.T) {
 	t.Parallel()
+	testhelper.NewFeatureSets(featureflag.MergeTreeMerge, featureflag.GitV238).Run(
+		t,
+		testUserMergeBranchConflict,
+	)
+}
 
-	ctx := testhelper.Context(t)
+func testUserMergeBranchConflict(t *testing.T, ctx context.Context) {
+	t.Parallel()
 
 	ctx, cfg, repoProto, repoPath, client := setupOperationsService(t, ctx)
 
+	const baseBranch = "base"
 	const mergeIntoBranch = "mergeIntoBranch"
 	const mergeFromBranch = "mergeFromBranch"
 	const conflictingFile = "file"
 
-	baseCommit := gittest.WriteCommit(t, cfg, repoPath, gittest.WithBranch(mergeIntoBranch), gittest.WithTreeEntries(gittest.TreeEntry{
+	baseCommit := gittest.WriteCommit(t, cfg, repoPath, gittest.WithBranch(baseBranch), gittest.WithTreeEntries(gittest.TreeEntry{
 		Mode: "100644", Path: conflictingFile, Content: "data",
 	}))
 
-	gittest.Exec(t, cfg, "-C", repoPath, "branch", mergeFromBranch, baseCommit.String())
+	divergedInto := gittest.WriteCommit(
+		t,
+		cfg,
+		repoPath,
+		gittest.WithBranch(mergeIntoBranch),
+		gittest.WithParents(baseCommit),
+		gittest.WithTreeEntries(gittest.TreeEntry{
+			Mode: "100644", Path: conflictingFile, Content: "data-1",
+		}),
+	)
 
-	divergedInto := gittest.WriteCommit(t, cfg, repoPath, gittest.WithBranch(mergeIntoBranch), gittest.WithTreeEntries(gittest.TreeEntry{
-		Mode: "100644", Path: conflictingFile, Content: "data-1",
-	}))
-
-	divergedFrom := gittest.WriteCommit(t, cfg, repoPath, gittest.WithBranch(mergeFromBranch), gittest.WithTreeEntries(gittest.TreeEntry{
-		Mode: "100644", Path: conflictingFile, Content: "data-2",
-	}))
+	divergedFrom := gittest.WriteCommit(
+		t,
+		cfg,
+		repoPath,
+		gittest.WithBranch(mergeFromBranch),
+		gittest.WithParents(baseCommit),
+		gittest.WithTreeEntries(gittest.TreeEntry{
+			Mode: "100644", Path: conflictingFile, Content: "data-2",
+		}),
+	)
 
 	mergeBidi, err := client.UserMergeBranch(ctx)
 	require.NoError(t, err)
@@ -687,9 +749,13 @@ func TestUserMergeBranch_conflict(t *testing.T) {
 
 func TestUserMergeBranch_allowed(t *testing.T) {
 	t.Parallel()
+	testhelper.NewFeatureSets(featureflag.MergeTreeMerge, featureflag.GitV238).Run(
+		t,
+		testUserMergeBranchAllowed,
+	)
+}
 
-	ctx := testhelper.Context(t)
-
+func testUserMergeBranchAllowed(t *testing.T, ctx context.Context) {
 	mergeBranchHeadAfter := "c5b32bc830ea7f6f14796118ff236608295bcf46"
 
 	for _, tc := range []struct {

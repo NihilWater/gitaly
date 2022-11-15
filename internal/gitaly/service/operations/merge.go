@@ -3,18 +3,22 @@ package operations
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus/ctxlogrus"
 	"github.com/sirupsen/logrus"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/git/commit"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git/localrepo"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/git/merge"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git/updateref"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/git2go"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/gitaly/hook"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/gitaly/service"
 	"gitlab.com/gitlab-org/gitaly/v15/internal/helper"
+	"gitlab.com/gitlab-org/gitaly/v15/internal/metadata/featureflag"
 	"gitlab.com/gitlab-org/gitaly/v15/proto/go/gitalypb"
 )
 
@@ -50,6 +54,47 @@ func validateMergeBranchRequest(request *gitalypb.UserMergeBranchRequest) error 
 	return nil
 }
 
+func (s *Server) merge(
+	ctx context.Context,
+	repoPath string,
+	quarantineRepo *localrepo.Repo,
+	authorName string,
+	authorMail string,
+	authorDate time.Time,
+	message string,
+	ours string,
+	theirs string,
+) (string, error) {
+	treeOID, err := merge.MergeTree(ctx, quarantineRepo, ours, theirs)
+	if err != nil {
+		return "", err
+	}
+
+	c, err := commit.Write(
+		ctx,
+		quarantineRepo,
+		commit.Config{
+			TreeID:  treeOID,
+			Message: message,
+			Parents: []git.ObjectID{
+				git.ObjectID(ours),
+				git.ObjectID(theirs),
+			},
+			AuthorName:     authorName,
+			AuthorEmail:    authorMail,
+			AuthorDate:     authorDate,
+			CommitterName:  authorName,
+			CommitterEmail: authorMail,
+			CommitterDate:  authorDate,
+		},
+	)
+	if err != nil {
+		return "", fmt.Errorf("create commit from tree: %w", err)
+	}
+
+	return string(c), nil
+}
+
 // TODO: remove this function once we roll out the feature flag
 // to use the git implementation.
 func (s *Server) mergeWithGit2Go(
@@ -76,8 +121,14 @@ func (s *Server) mergeWithGit2Go(
 		Ours:    ours,
 		Theirs:  theirs,
 	})
-
 	if err != nil {
+		var conflictErr git2go.ConflictingFilesError
+		if errors.As(err, &conflictErr) {
+			return "", &merge.MergeTreeError{
+				ConflictingFiles: conflictErr.ConflictingFiles,
+			}
+		}
+
 		if errors.Is(err, git2go.ErrInvalidArgument) {
 			return "", helper.ErrInvalidArgument(err)
 		}
@@ -126,23 +177,42 @@ func (s *Server) UserMergeBranch(stream gitalypb.OperationService_UserMergeBranc
 		return helper.ErrInvalidArgument(err)
 	}
 
-	commitID, err := s.mergeWithGit2Go(ctx, repoPath, quarantineRepo,
-		string(firstRequest.User.Name),
-		string(firstRequest.User.Email),
-		authorDate,
-		string(firstRequest.Message),
-		revision.String(),
-		firstRequest.CommitId)
+	var mergeCommitID string
+	var mergeErr error
+
+	version, err := s.gitCmdFactory.GitVersion(ctx)
 	if err != nil {
-		var conflictErr git2go.ConflictingFilesError
-		if errors.As(err, &conflictErr) {
+		return helper.ErrInternalf("getting git version: %w", err)
+	}
+
+	if featureflag.MergeTreeMerge.IsEnabled(ctx) && version.IsMergeTreeSupported() {
+		mergeCommitID, mergeErr = s.merge(ctx, repoPath, quarantineRepo,
+			string(firstRequest.User.Name),
+			string(firstRequest.User.Email),
+			authorDate,
+			string(firstRequest.Message),
+			revision.String(),
+			firstRequest.CommitId)
+	} else {
+		mergeCommitID, mergeErr = s.mergeWithGit2Go(ctx, repoPath, quarantineRepo,
+			string(firstRequest.User.Name),
+			string(firstRequest.User.Email),
+			authorDate,
+			string(firstRequest.Message),
+			revision.String(),
+			firstRequest.CommitId)
+	}
+
+	if mergeErr != nil {
+		var conflictErr *merge.MergeTreeError
+		if errors.As(mergeErr, &conflictErr) {
 			conflictingFiles := make([][]byte, 0, len(conflictErr.ConflictingFiles))
 			for _, conflictingFile := range conflictErr.ConflictingFiles {
 				conflictingFiles = append(conflictingFiles, []byte(conflictingFile))
 			}
 
 			detailedErr, err := helper.ErrWithDetails(
-				helper.ErrFailedPreconditionf("merging commits: %w", err),
+				helper.ErrFailedPreconditionf("merging commits: %w", mergeErr),
 				&gitalypb.UserMergeBranchError{
 					Error: &gitalypb.UserMergeBranchError_MergeConflict{
 						MergeConflict: &gitalypb.MergeConflictError{
@@ -165,7 +235,7 @@ func (s *Server) UserMergeBranch(stream gitalypb.OperationService_UserMergeBranc
 		return helper.ErrInternal(err)
 	}
 
-	mergeOID, err := git.ObjectHashSHA1.FromHex(commitID)
+	mergeOID, err := git.ObjectHashSHA1.FromHex(mergeCommitID)
 	if err != nil {
 		return helper.ErrInternalf("could not parse merge ID: %w", err)
 	}
