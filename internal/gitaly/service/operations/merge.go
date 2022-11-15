@@ -139,7 +139,8 @@ func (s *Server) mergeWithGit2Go(
 	return mergeResult.CommitID, nil
 }
 
-//nolint: revive,stylecheck // This is unintentionally missing documentation.
+// UserMergeBranch is a two stage streaming RPC that will merge two commits together and
+// create a merge commit
 func (s *Server) UserMergeBranch(stream gitalypb.OperationService_UserMergeBranchServer) error {
 	ctx := stream.Context()
 
