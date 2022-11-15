@@ -349,7 +349,7 @@ func TestStreamLimitHandler_error(t *testing.T) {
 	require.True(t, ok)
 
 	testhelper.ProtoEqual(t, []interface{}{&gitalypb.LimitError{
-		ErrorMessage: "maximum queue size reached",
+		ErrorMessage: "maximum global concurrency queue size reached",
 		RetryAfter:   &durationpb.Duration{},
 	}}, st.Details())
 
