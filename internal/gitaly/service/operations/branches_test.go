@@ -427,10 +427,26 @@ func TestUserDeleteBranch_success(t *testing.T) {
 		desc            string
 		branchNameInput string
 		branchCommit    string
+		expectedOldOID  string
 		user            *gitalypb.User
 		response        *gitalypb.UserDeleteBranchResponse
 		err             error
 	}{
+		{
+			desc:            "simple successful deletion without ExpectedOldOID",
+			branchNameInput: "to-attempt-to-delete-soon-branch",
+			branchCommit:    "c7fbe50c7c7419d9701eebe64b1fdacc3df5b9dd",
+			user:            gittest.TestUser,
+			response:        &gitalypb.UserDeleteBranchResponse{},
+		},
+		{
+			desc:            "simple successful deletion with ExpectedOldOID",
+			branchNameInput: "to-attempt-to-delete-soon-branch",
+			branchCommit:    "c7fbe50c7c7419d9701eebe64b1fdacc3df5b9dd",
+			expectedOldOID:  "c7fbe50c7c7419d9701eebe64b1fdacc3df5b9dd",
+			user:            gittest.TestUser,
+			response:        &gitalypb.UserDeleteBranchResponse{},
+		},
 		{
 			desc:            "simple successful deletion",
 			branchNameInput: "to-attempt-to-delete-soon-branch",
@@ -459,9 +475,10 @@ func TestUserDeleteBranch_success(t *testing.T) {
 			gittest.Exec(t, cfg, "-C", repoPath, "branch", testCase.branchNameInput, testCase.branchCommit)
 
 			response, err := client.UserDeleteBranch(ctx, &gitalypb.UserDeleteBranchRequest{
-				Repository: repo,
-				BranchName: []byte(testCase.branchNameInput),
-				User:       testCase.user,
+				Repository:     repo,
+				BranchName:     []byte(testCase.branchNameInput),
+				ExpectedOldOid: testCase.expectedOldOID,
+				User:           testCase.user,
 			})
 			require.NoError(t, err)
 			testhelper.ProtoEqual(t, testCase.response, response)
@@ -548,6 +565,74 @@ func TestUserDeleteBranch_allowed(t *testing.T) {
 			})
 			testhelper.RequireGrpcError(t, tc.expectedErr, err)
 			testhelper.ProtoEqual(t, tc.expectedResponse, response)
+		})
+	}
+}
+
+func TestUserDeleteBranch_expectedOldOID(t *testing.T) {
+	t.Parallel()
+
+	ctx := testhelper.Context(t)
+	ctx, cfg, repo, repoPath, client := setupOperationsService(t, ctx)
+
+	testCases := []struct {
+		desc            string
+		branchNameInput string
+		branchCommit    string
+		expectedOldOID  string
+		user            *gitalypb.User
+		expectedErr     error
+		expectedGRPCErr error
+	}{
+		{
+			desc:            "invalid ExpectedOldOID",
+			branchNameInput: "branch-1",
+			branchCommit:    "c7fbe50c7c7419d9701eebe64b1fdacc3df5b9dd",
+			expectedOldOID:  "foobar",
+			user:            gittest.TestUser,
+			expectedErr:     status.Error(codes.FailedPrecondition, "object id: foobar: reference not found"),
+		},
+		{
+			desc:            "valid but incorrect ExpectedOldOID",
+			branchNameInput: "branch-2",
+			branchCommit:    "c7fbe50c7c7419d9701eebe64b1fdacc3df5b9dd",
+			expectedOldOID:  "2f63565e7aac07bcdadb654e253078b727143ec4",
+			user:            gittest.TestUser,
+			expectedGRPCErr: errWithDetails(t,
+				helper.ErrFailedPreconditionf("reference update failed: Could not update refs/heads/branch-2. Please refresh and try again."),
+				&gitalypb.UserDeleteBranchError{
+					Error: &gitalypb.UserDeleteBranchError_ReferenceUpdate{
+						ReferenceUpdate: &gitalypb.ReferenceUpdateError{
+							ReferenceName: []byte("refs/heads/branch-2"),
+							OldOid:        "2f63565e7aac07bcdadb654e253078b727143ec4",
+							NewOid:        git.ObjectHashSHA1.ZeroOID.String(),
+						},
+					},
+				},
+			),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			gittest.Exec(t, cfg, "-C", repoPath, "branch", tc.branchNameInput, tc.branchCommit)
+
+			_, err := client.UserDeleteBranch(ctx, &gitalypb.UserDeleteBranchRequest{
+				Repository:     repo,
+				BranchName:     []byte(tc.branchNameInput),
+				ExpectedOldOid: tc.expectedOldOID,
+				User:           tc.user,
+			})
+
+			if tc.expectedErr != nil {
+				require.Equal(t, err, tc.expectedErr)
+			} else {
+				testhelper.RequireGrpcError(t, tc.expectedGRPCErr, err)
+			}
+
+			refs := gittest.Exec(t, cfg, "-C", repoPath, "for-each-ref", "--", "refs/heads/"+tc.branchNameInput)
+			require.Contains(t, string(refs), tc.branchCommit, "branch deleted from refs")
+
 		})
 	}
 }
