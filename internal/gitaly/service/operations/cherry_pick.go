@@ -113,12 +113,16 @@ func (s *Server) UserCherryPick(ctx context.Context, req *gitalypb.UserCherryPic
 	referenceName := git.NewReferenceNameFromBranchName(string(req.BranchName))
 
 	branchCreated := false
-	oldrev, err := quarantineRepo.ResolveRevision(ctx, referenceName.Revision()+"^{commit}")
-	if errors.Is(err, git.ErrReferenceNotFound) {
-		branchCreated = true
-		oldrev = git.ObjectHashSHA1.ZeroOID
-	} else if err != nil {
-		return nil, helper.ErrInvalidArgumentf("resolve ref: %w", err)
+	oldrev := git.ObjectID(req.GetExpectedOldOid())
+
+	if oldrev == "" {
+		oldrev, err = quarantineRepo.ResolveRevision(ctx, referenceName.Revision()+"^{commit}")
+		if errors.Is(err, git.ErrReferenceNotFound) {
+			branchCreated = true
+			oldrev = git.ObjectHashSHA1.ZeroOID
+		} else if err != nil {
+			return nil, helper.ErrInvalidArgumentf("resolve ref: %w", err)
+		}
 	}
 
 	if req.DryRun {
