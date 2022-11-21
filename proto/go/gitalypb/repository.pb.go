@@ -3061,13 +3061,13 @@ func (*CreateRepositoryFromBundleResponse) Descriptor() ([]byte, []int) {
 	return file_repository_proto_rawDescGZIP(), []int{51}
 }
 
-// This comment is left unintentionally blank.
+// FindLicenseRequest asks to detect the license for the given repository.
 type FindLicenseRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// This comment is left unintentionally blank.
+	// Repository is repository where to detect the license.
 	Repository *Repository `protobuf:"bytes,1,opt,name=repository,proto3" json:"repository,omitempty"`
 }
 

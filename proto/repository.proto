@@ -182,7 +182,8 @@ service RepositoryService {
     };
   }
 
-  // This comment is left unintentionally blank.
+  // FindLicense looks in the given repository and attempts to detect all the
+  // details about the license used in the repository.
   rpc FindLicense(FindLicenseRequest) returns (FindLicenseResponse) {
     option (op_type) = {
       op: ACCESSOR
@@ -775,9 +776,9 @@ message CreateRepositoryFromBundleRequest {
 message CreateRepositoryFromBundleResponse {
 }
 
-// This comment is left unintentionally blank.
+// FindLicenseRequest asks to detect the license for the given repository.
 message FindLicenseRequest {
-  // This comment is left unintentionally blank.
+  // Repository is repository where to detect the license.
   Repository repository = 1 [(target_repository)=true];
 }
 
