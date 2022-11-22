@@ -19,7 +19,7 @@ func TestMain(m *testing.M) {
 	testhelper.Run(m)
 }
 
-func setupUpdater(t *testing.T, ctx context.Context) (config.Cfg, *localrepo.Repo, string, *Updater) {
+func setupUpdater(t *testing.T, ctx context.Context, opts ...UpdaterOpt) (config.Cfg, *localrepo.Repo, string, *Updater) {
 	t.Helper()
 
 	cfg := testcfg.Build(t)
@@ -29,7 +29,7 @@ func setupUpdater(t *testing.T, ctx context.Context) (config.Cfg, *localrepo.Rep
 	})
 	repo := localrepo.NewTestRepo(t, cfg, repoProto, git.WithSkipHooks())
 
-	updater, err := New(ctx, repo)
+	updater, err := New(ctx, repo, opts...)
 	require.NoError(t, err)
 
 	return cfg, repo, repoPath, updater
@@ -102,8 +102,49 @@ func TestUpdater_delete(t *testing.T) {
 	require.NoError(t, updater.Commit())
 
 	// Check that the reference was removed.
-	_, err := repo.ReadCommit(ctx, "refs/heads/main")
-	require.Equal(t, localrepo.ErrObjectNotFound, err)
+	_, err := repo.GetReference(ctx, "refs/heads/main")
+	require.Equal(t, git.ErrReferenceNotFound, err)
+}
+
+func TestUpdater_deleteSymbolicRefWithoutNoDeref(t *testing.T) {
+	t.Parallel()
+
+	ctx := testhelper.Context(t)
+
+	cfg, repo, repoPath, updater := setupUpdater(t, ctx)
+
+	gittest.WriteCommit(t, cfg, repoPath, gittest.WithBranch("main"))
+	gittest.Exec(t, cfg, "-C", repoPath, "symbolic-ref", "refs/symbolic-a", "refs/heads/main")
+
+	// Delete symbolic ref
+	require.NoError(t, updater.Delete("refs/symbolic-a"))
+	require.NoError(t, updater.Commit())
+
+	// But the original ref is also gone
+	_, err := repo.GetReference(ctx, "refs/heads/main")
+	require.Equal(t, git.ErrReferenceNotFound, err)
+}
+
+func TestUpdater_deleteSymbolicRefWithNoDeref(t *testing.T) {
+	t.Parallel()
+
+	ctx := testhelper.Context(t)
+
+	cfg, repo, repoPath, updater := setupUpdater(t, ctx, WithNoDeref())
+
+	oid := gittest.WriteCommit(t, cfg, repoPath, gittest.WithBranch("main"))
+	gittest.Exec(t, cfg, "-C", repoPath, "symbolic-ref", "refs/symbolic-a", "refs/heads/main")
+
+	// Delete symbolic ref
+	require.NoError(t, updater.Delete("refs/symbolic-a"))
+	require.NoError(t, updater.Commit())
+
+	// The original ref is still available
+	require.Equal(t, gittest.ResolveRevision(t, cfg, repoPath, "refs/heads/main"), oid)
+
+	// And the symbolic ref is gone
+	_, err := repo.GetReference(ctx, "refs/symbolic-a")
+	require.Equal(t, git.ErrReferenceNotFound, err)
 }
 
 func TestUpdater_prepareLocksTransaction(t *testing.T) {
