@@ -49,6 +49,19 @@ func TestRequestQueue_ReadObject(t *testing.T) {
 		require.Equal(t, fmt.Errorf("cannot read object info: %w", fmt.Errorf("file already closed")), err)
 	})
 
+	t.Run("read pathname with newline", func(t *testing.T) {
+		_, queue := newInterceptedObjectQueue(t, ctx, `#!/bin/sh
+			echo -e "foo\nbar.txt missing"
+		`)
+
+		require.NoError(t, queue.RequestObject("foo"))
+
+		_, err := queue.ReadObject()
+		require.Equal(t, NotFoundError{error: fmt.Errorf("object not found")}, err)
+
+		require.False(t, queue.isDirty())
+	})
+
 	t.Run("read with unconsumed object", func(t *testing.T) {
 		_, queue := newInterceptedObjectQueue(t, ctx, fmt.Sprintf(`#!/bin/sh
 			echo "%s commit 464"
@@ -77,7 +90,7 @@ func TestRequestQueue_ReadObject(t *testing.T) {
 		require.NoError(t, queue.RequestObject("foo"))
 
 		_, err := queue.ReadObject()
-		require.Equal(t, fmt.Errorf("invalid info line: %q", "something something"), err)
+		require.Equal(t, fmt.Errorf("read info line: %w", io.EOF), err)
 
 		// The queue must be dirty when we failed due to an unexpected error.
 		require.True(t, queue.isDirty())

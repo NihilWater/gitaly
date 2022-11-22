@@ -71,19 +71,22 @@ restart:
 		return nil, NotFoundError{fmt.Errorf("object not found")}
 	}
 
+	// The below three errors should only happen when the pathname is taking over multiple lines.
+	// In such a scenario we want to keep reading till we hit the `missing` param, so we goto
+	// the start.
 	info := strings.Split(infoLine, " ")
 	if len(info) != 3 {
-		return nil, fmt.Errorf("invalid info line: %q", infoLine)
+		goto restart
 	}
 
 	oid, err := objectHash.FromHex(info[0])
 	if err != nil {
-		return nil, fmt.Errorf("parse object ID: %w", err)
+		goto restart
 	}
 
 	objectSize, err := strconv.ParseInt(info[2], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parse object size: %w", err)
+		goto restart
 	}
 
 	return &ObjectInfo{
